@@ -60,14 +60,13 @@ in {
 
     flakeName = mkOption {
       type = types.str;
-      default = "git rev-parse --show-toplevel | xargs basename";
-      description = "Command returning the name of the flake, used as part of the secrets path.";
+      description = "Name of the flake, used as part of the secrets path.";
     };
 
     secretsPath = mkOption {
       type = types.str;
-      default = ''/run/user/$(id -u)/agenix-shell/$(${cfg.flakeName})/$(uuidgen)'';
-      defaultText = lib.literalExpression ''"/run/user/$(id -u)/agenix-shell/$(''${config.agenix-shell.flakeName})/$(uuidgen)"'';
+      default = ''''${XDG_RUNTIME_DIR:-/tmp}/agenix-shell/${cfg.flakeName}'';
+      defaultText = lib.literalExpression ''''${XDG_RUNTIME_DIR:-/tmp}/agenix-shell/''${config.agenix-shell.flakeName}'';
       description = "Where the secrets are stored.";
     };
 
@@ -87,10 +86,23 @@ in {
     config,
     pkgs,
     ...
-  }: {
+  }:
+  let
+    freshFileCommand = pkgs.writeShellApplication rec {
+      name = "fresh-file";
+      runtimeInputs = [pkgs.libuuid];
+      text = "uuidgen";
+      meta.mainProgram = name;
+    };
+  in {
     options.agenix-shell = {
       agePackage = mkPackageOption pkgs "age" {
-        default = "rage";
+        default = "age";
+      };
+
+      freshFileCommand = mkOption {
+        type = types.str;
+        default = lib.getExe freshFileCommand;
       };
 
       _installSecrets = mkOption {
@@ -120,10 +132,11 @@ in {
         type = types.functionTo types.str;
         internal = true;
         default = secret: ''
-          SECRET_PATH=${secret.path}
+          FRESH_FILE=$(${config.agenix-shell.freshFileCommand})
+          SECRET_PATH=${secret.path}/$FRESH_FILE
 
           # shellcheck disable=SC2193
-          [ "$SECRET_PATH" != "${cfg.secretsPath}/${secret.name}" ] && mkdir -p "$(dirname "$SECRET_PATH")"
+          mkdir -p "$(dirname "$SECRET_PATH")"
           (
             umask u=r,g=,o=
             test -f "${secret.file}" || echo '[agenix] WARNING: encrypted file ${secret.file} does not exist!'
@@ -144,7 +157,7 @@ in {
         type = types.package;
         default = pkgs.writeShellApplication {
           name = "install-agenix-shell";
-          runtimeInputs = [];
+          runtimeInputs = [pkgs.coreutils];
           text = config.agenix-shell._installSecrets;
         };
         description = "Script that exports secrets as variables, it's meant to be used as hook in `devShell`s.";
