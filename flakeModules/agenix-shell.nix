@@ -159,6 +159,7 @@ in {
           name = "install-agenix-shell";
           runtimeInputs = [pkgs.coreutils];
           text = config.agenix-shell._installSecrets;
+          bashOptions = [];
         };
         description = "Script that exports secrets as variables, it's meant to be used as hook in `devShell`s.";
         defaultText = lib.literalMD "An automatically generated package";
